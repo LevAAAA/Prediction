@@ -1,0 +1,160 @@
+---
+title: "Prediction"
+date: "21/10/2020"
+output: pdf_document
+---
+
+# Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways
+
+# Task
+
+The goal of this project is to predict the manner in which they did the exercise. This is the “classe” variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+  1.  Your submission should consist of a link to a Github repo with your R markdown and compiled HTML file describing your analysis. Please constrain the text of the writeup to < 2000 words and the number of figures to be less than 5. It will make it easier for the graders if you submit a repo with a gh-pages branch so the HTML page can be viewed online (and you always want to make it easy on graders.
+
+  2.  You should also apply your machine learning algorithm to the 20 test cases available in the test data above. Please submit your predictions in appropriate format to the programming assignment for automated grading. See the programming assignment for additional details.
+
+```{r}
+library(rattle)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+library(randomForest)
+library(RColorBrewer)
+
+set.seed(122333)
+
+```
+
+# Data loading and cleaning
+
+Now this is test to see if the dataset is downloaded in folder and if not it download it.
+
+
+```{r}
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "pml-training.csv"
+testFile  <- "pml-testing.csv"
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile = trainFile, method = "curl")
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile = testFile, method = "curl")
+}
+
+
+pml_training<-read.csv("pml-training.csv")
+pml_testing<-read.csv("pml-testing.csv")
+
+dim(pml_training)
+dim(pml_testing)
+
+
+```
+The training data set contains 19622 observations and 160 variables, while the testing data set contains 20 observations and 160 variables. The “classe” variable in the training set is the outcome to predict.
+
+# Clean the data
+
+```{r}
+pml_training <- pml_training[, colSums(is.na(pml_training)) == 0] 
+pml_testing <- pml_testing[, colSums(is.na(pml_testing)) == 0] 
+```
+
+Next, we get rid of some columns that do not contribute much to the accelerometer measurements.
+
+```{r}
+classe <- pml_training$classe
+pml_training_remove <- grepl("^X|timestamp|window", names(pml_training))
+pml_training <- pml_training[, !pml_training_remove]
+pml_training_cleaned <- pml_training[, sapply(pml_training, is.numeric)]
+pml_training_cleaned$classe <- classe
+
+pml_testing_remove <- grepl("^X|timestamp|window", names(pml_testing))
+pml_testing <- pml_testing[, !pml_testing_remove]
+pml_testing_cleaned <- pml_testing[, sapply(pml_testing, is.numeric)]
+```
+
+Now, the cleaned training data set contains 19622 observations and 53 variables, while the testing data set contains 20 observations and 53 variables. The “classe” variable is still in the cleaned training set.
+
+# Slice the data
+
+Then, we can split the cleaned training set into a pure training data set (70%) and a validation data set (30%). We will use the validation data set to conduct cross validation in future steps.
+
+
+```{r}
+inTrain <- createDataPartition(pml_training_cleaned$classe, p=0.70, list=FALSE)
+trainData <- pml_training_cleaned[inTrain, ]
+testData <- pml_training_cleaned[-inTrain, ]
+```
+
+# Data Modeling
+
+We fit a predictive model for activity recognition using Random Forest algorithm because it automatically selects important variables and is robust to correlated covariates & outliers in general. We will use 5-fold cross validation when applying the algorithm.
+
+
+```{r}
+controlRf <- trainControl(method="cv", 5)
+modelRf <- train(classe ~ ., data=trainData, method="rf", trControl=controlRf, ntree=250)
+modelRf
+```
+
+Then, we estimate the performance of the model on the validation data set.
+
+```{r}
+predictRf <- predict(modelRf, testData)
+confusionMatrix(as.factor(testData$classe), predictRf)
+```
+
+
+```{r}
+accuracy <- postResample(predictRf, as.factor(testData$classe))
+accuracy
+```
+
+
+```{r}
+oose <- 1 - as.numeric(confusionMatrix(as.factor(testData$classe), predictRf)$overall[1])
+oose
+```
+
+So, the estimated accuracy of the model is 99.42% and the estimated out-of-sample error is 0.53%.
+
+# Predicting for Test Data Set
+
+Now, we apply the model to the original testing data set downloaded from the data source. We remove the problem_id column first.
+
+
+```{r}
+result <- predict(modelRf, pml_testing_cleaned[, -length(names(pml_testing_cleaned))])
+result
+```
+
+
+# Conlusion
+
+we find that the Accuracy of the Random Forest Model and error is better than the Decision Tree model. so we conclude that the random forest is the better model.
+
+
+
+# Appendix: Figures
+
+  1. Correlation Matrix Visualization
+
+```{r}
+corrPlot <- cor(trainData[, -length(names(trainData))])
+corrplot(corrPlot, method="color")
+```
+
+  2. Decision Tree Visualization
+  
+```{r}
+treeModel <- rpart(classe ~ ., data=trainData, method="class")
+fancyRpartPlot(treeModel)
+```
+
+
+
